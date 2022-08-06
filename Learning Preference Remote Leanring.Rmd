@@ -1,0 +1,267 @@
+---
+title: "Project 1"
+author: "Minjeong Kim"
+date: '2022-06-07'
+output: html_document
+---
+<style type="text/css">
+
+body, td {
+   font-family: times, serif; font-size: 14px;
+}
+code.r{
+  font-family: times, serif; font-size: 12px;
+}
+pre {
+  font-family: times, serif; font-size: 12px
+}
+</style>
+
+
+
+# {.tabset .tabset-fade .tabset-pills}
+
+## Dataset
+
+```{r Load necessary packages, include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(splitstackshape)
+library(data.table)
+library(readr)
+library(corrplot)
+```
+
+**About Data**
+This dataset is collected to see the learning preference of students in the City of New York. Total enrollment count for students whose learning preference is remote or blended or missing and who have attended school in person at least once since September 16, 2020. Students attending charter schools, students receiving home or hospital instruction, pre-K students (3-K) attending New York City Early Education Centers (NYCEECs), and students attending some District 79 programs are not included. In order to comply with regulations of the Family Educational Rights and Privacy Act (FERPA) on public reporting of education outcomes, data for groups with 5 or fewer students enrolled are suppressed with an “s”. In addition, corresponding groups with the next lowest number of students enrolled are suppressed when they could reveal, through addition or subtraction, the underlying numbers that have been redacted.
+
+*Note that there are only 6th grade to 12th grade for District 79 data.
+
+*Reference
+New York City Department of Education. (2021). Learning Preference City Remote Learning - as of Jan 4, 2021 [Data set]. https://catalog.data.gov/dataset/learning-preference-city-remote-learning-as-of-jan-4-2021.
+
+```{r Import Dataset}
+LearningPref.data <- read_csv("Learning_Preference_City_Remote_Learning_-_as_of_Jan_4__2021.csv")
+```
+
+## Preprocess
+
+```{r Data setting}
+LearningPref.data <- LearningPref.data %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector"))
+
+#'Blended' variable contains comma, which prevents factor to numeric conversion. So, we will remove comma using gsub().
+LearningPref.data$`# Blended` <- gsub(",", "", LearningPref.data$`# Blended`)
+
+#Exclude Distrct 79 data due to its incomplete data collection
+LearningPref.data <- LearningPref.data[-c(859:876),]
+```
+
+**Data Transformation**
+
+Step 1. Subset the data by each factor
+
+```{r}
+#Learning Preference by District
+LP_bydistrict <- LearningPref.data %>%
+  group_by(District) %>%
+  filter(Category=='All District')%>%
+  select(District, "# Total Enrollment", "# Blended", "# Remote") %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) %>%
+  rename(Enrollment ='# Total Enrollment',
+         Blended ='# Blended',
+         Remote = '# Remote')
+
+#Learning Preference by English Language Learner Status
+LP_byELL <- LearningPref.data %>%
+  group_by(District) %>%
+  filter(`Disaggregation Category`=="English Language Learner Status") %>%
+  select(District, Category, "# Total Enrollment", "# Blended", "# Remote") %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) %>%
+  rename(ELL = Category,
+         Enrollment ='# Total Enrollment',
+         Blended ='# Blended',
+         Remote = '# Remote')
+
+#Learning Preference by Gender
+LP_bygender <- LearningPref.data %>%
+  group_by(District) %>%
+  filter(`Disaggregation Category`=="Gender") %>%
+  select(District, Category, "# Total Enrollment", "# Blended", "# Remote") %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) %>%
+  rename(Gender = Category,
+         Enrollment ='# Total Enrollment',
+         Blended ='# Blended',
+         Remote = '# Remote')
+
+#Learning Preference by Grade Level
+LP_byGradeLevel <- LearningPref.data %>%
+  group_by(District) %>%
+  filter(`Disaggregation Category`=="Grade Level") %>%
+  select(District, Category, "# Total Enrollment", "# Blended", "# Remote") %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) %>%
+  rename(Grade = Category,
+         Enrollment ='# Total Enrollment',
+         Blended ='# Blended',
+         Remote = '# Remote')
+
+LP_byGradeLevel$Blended <- as.numeric(LP_byGradeLevel$Blended)
+LP_byGradeLevel$Remote <- as.numeric(LP_byGradeLevel$Remote)
+
+#Learning Preference by Race/Ethnicity
+LP_byRE <- LearningPref.data %>%
+  group_by(District) %>%
+  filter(`Disaggregation Category`=="Race or Ethnicity") %>%
+  select(District, Category, "# Total Enrollment", "# Blended", "# Remote") %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) %>%
+  rename(RE = Category,
+         Enrollment ='# Total Enrollment',
+         Blended ='# Blended',
+         Remote = '# Remote')
+```
+
+
+```{r dataset transformation}
+# 1. Learning Preference by district number
+#Variable setting
+LP_bydistrict$District <- as.factor(LP_bydistrict$District)
+LP_bydistrict$Enrollment <- as.numeric(LP_bydistrict$Enrollment)
+
+LP_bydistrict$Blended <- as.numeric(LP_bydistrict$Blended)
+LP_bydistrict$Remote <- as.numeric(LP_bydistrict$Remote)
+
+#Create a vector for the learning preference
+Preference <- c()
+for(i in 1:nrow(LP_bydistrict)){
+  b <- rep("Blended", LP_bydistrict[i,3]) #Blended
+  r <- rep("Remote", LP_bydistrict[i,4]) #Remote
+  p <- c(b,r)
+  Preference <- c(Preference, p)
+}
+
+LP_bydistrict <- LP_bydistrict %>%
+  group_by(District) %>%
+  slice(rep(seq_len(n()), first(Enrollment))) %>% #replicate rows
+  select(District) %>%
+  setattr("class", c("data.frame", "list", "oldClass", "vector")) #attribute setting
+
+LP_bydistrict <- cbind(LP_bydistrict, Preference)
+
+#2.. Learning preference by gender
+LP_bygender <- LP_bygender %>%
+  group_by(District, Gender) %>%
+  slice(rep(seq_len(n()), first(Enrollment)))
+
+#2. Learning preference by ELL
+
+#Add additional variable for the learning preference to arrange the data later
+Status <- c()
+iter <- seq(1, nrow(LP_byELL),2)
+for(i in 1:nrow(LP_byELL)){
+  b <- rep("Blended", LP_byELL[i,4])
+  r <- rep("Remote", LP_byELL[i,5])
+  s <- c(b,r)
+  Status <- c(Status, s)
+}
+
+LP_byELL$Status <- Status
+LP_byELL <- LP_byELL[,c(2,3,7)]
+LP_byELL$District <- as.factor(LP_byELL$District)
+
+LP_byELL <- LP_byELL %>%
+  group_by(District, ELL) %>%
+  slice(rep(seq_len(n()), first(Enrollment))) %>%
+  arrange(District, Status)
+
+
+#4. Learning preference by grade level
+Status <- c()
+iter <- seq(1, nrow(LP_byGradeLevel),2)
+for(i in 1:nrow(LP_byGradeLevel)){
+  b <- rep("Blended", LP_byGradeLevel[i,4])
+  r <- rep("Remote", LP_byGradeLevel[i,5])
+  s <- c(b,r)
+  Status <- c(Status, s)
+}
+#Add new column to preserve group order for Grade
+key <- letters[seq(from=1, to=14)]
+LP_byGradeLevel <- cbind(key, LP_byGradeLevel)
+
+LP_byGradeLevel <- LP_byGradeLevel %>%
+  group_by(District, key) %>%
+  slice(rep(seq_len(n()), first(Enrollment)))
+
+LP_byGradeLevel$Status <- Status
+LP_byGradeLevel <- LP_byGradeLevel[,c(2,3,7)]
+LP_byGradeLevel$District <- as.factor(LP_byGradeLevel$District)
+LP_byGradeLevel <- LP_byGradeLevel %>%
+  arrange(District, Status)
+
+#5. Learning preference by race or ethnicity
+Status <- c()
+iter <- seq(1, nrow(LP_byRE),2)
+for(i in 1:nrow(LP_byRE)){
+  b <- rep("Blended", LP_byRE[i,4])
+  r <- rep("Remote", LP_byRE[i,5])
+  s <- c(b,r)
+  Status <- c(Status, s)
+}
+
+key <- letters[seq(from=1, to=7)]
+LP_byRE <- cbind(key, LP_byRE)
+
+LP_byRE <- LP_byRE %>%
+  group_by(District, key) %>%
+  slice(rep(seq_len(n()), first(Enrollment)))
+
+LP_byRE$Status <- Status
+LP_byRE <- LP_byRE[,c(2,3,7)]
+LP_byRE$District <- as.factor(LP_byRE$District)
+
+LP_byRE <- LP_byRE %>%
+  arrange(District, Status)
+
+LP <- cbind(LP_bydistrict, LP_bygender$Gender, LP_byGradeLevel$Grade, LP_byELL$ELL, LP_byRE$RE)
+colnames(LP) <- c("District", "Preference", "Gender", "Grade", "ELL", "RE")
+length(which(LP$District==2 & LP$Preference=="Blended" & LP$ELL=="Not ELL"))
+
+```
+
+```{r}
+#Convert all columns to factor
+
+LP[sapply(LP, is.character)] <- lapply(LP[sapply(LP, is.character)],as.factor)
+```
+
+
+
+Exploratory Data Analysis (EDA)
+
+```{r Visualization 1}
+
+by_district <- LP %>%
+  group_by(District,Preference) %>%
+  summarise(count = length(District))
+
+by_district <- by_district %>%
+  group_by(District) %>%
+  mutate(perc = count/sum(count)*100)
+
+ggplot(by_district,aes(x=District, y=perc, fill=Preference))+
+  geom_bar(position = "dodge", stat="identity")+
+  scale_y_continuous(expand = c(0,0), limits = c(0,100))+
+  ylab("Percentage")+
+  theme_classic()
+
+```
+
+```{r}
+by_gender <- LP %>%
+  group_by(Gender,Preference) %>%
+  summarise(count = length(Gender))
+
+by_gender
+
+```
+
+
